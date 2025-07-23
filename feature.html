@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign Language Translator</title>
+  <link rel="shortcut icon" href="https://www.shutterstock.com/image-vector/mute-emoji-vector-icon-simple-260nw-1132736435.jpg" type="image/x-icon">
+  <link rel="stylesheet" href="feature.css">
+</head>
+<body>
+
+<div class="container">
+  <div class="video-wrapper">
+    <video id="webcam" autoplay playsinline muted hidden></video>
+    <img id="uploadedImage" hidden />
+    <canvas id="output_canvas"></canvas>
+
+    <div class="entry-buttons" id="entryButtons">
+      <button onclick="startCamera()">📷 Open Camera</button>
+      <button onclick="openFile()">🖼️ Upload Image</button>
+      <input type="file" id="fileInput" accept="image/*" hidden />
+    </div>
+  </div>
+
+  <div class="detection">
+    <h1 id="hide1">Live Sign Language Translator</h1>
+    <div id="detected-emoji" class="detected-emoji">🤔</div>
+    <div id="detected-name" class="detected-name">Waiting for Gesture...</div>
+    <div id="translation-text" class="translation-text">Please show a recognized sign language gesture.</div>
+  </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+<script>
+  const videoElement = document.getElementById('webcam');
+  const canvasElement = document.getElementById('output_canvas');
+  const canvasCtx = canvasElement.getContext('2d');
+  const uploadedImageEl = document.getElementById('uploadedImage');
+  const entryButtons = document.getElementById('entryButtons');
+  const fileInput = document.getElementById('fileInput');
+
+  const detectedEmojiEl = document.getElementById('detected-emoji');
+  const detectedNameEl = document.getElementById('detected-name');
+  const translationTextEl = document.getElementById('translation-text');
+
+  let lastSpoken = '';
+
+  const hands = new Hands({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+  });
+
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.8,
+    minTrackingConfidence: 0.8,
+  });
+
+  hands.onResults(onResults);
+
+  function speak(text) {
+    if (text === lastSpoken) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    speechSynthesis.speak(utterance);
+    lastSpoken = text;
+  }
+
+  function isFingerExtended(landmarks, tip, pip) {
+    return landmarks[tip].y < landmarks[pip].y;
+  }
+  function isFingerFolded(landmarks, tip, pip) {
+    return landmarks[tip].y > landmarks[pip].y;
+  }
+
+  function classifyGesture(landmarks) {
+    const [thumbTip, thumbPip] = [4, 2];
+    const [indexTip, indexPip] = [8, 6];
+    const [middleTip, middlePip] = [12, 10];
+    const [ringTip, ringPip] = [16, 14];
+    const [pinkyTip, pinkyPip] = [20, 18];
+
+    const thumbExt = isFingerExtended(landmarks, thumbTip, thumbPip);
+    const indexExt = isFingerExtended(landmarks, indexTip, indexPip);
+    const middleExt = isFingerExtended(landmarks, middleTip, middlePip);
+    const ringExt = isFingerExtended(landmarks, ringTip, ringPip);
+    const pinkyExt = isFingerExtended(landmarks, pinkyTip, pinkyPip);
+
+    if (thumbExt && !indexExt && !middleExt && !ringExt && !pinkyExt)
+      return { emoji: '👍', name: 'Thumbs Up', translation: '' };
+
+    if (indexExt && middleExt && !ringExt && !pinkyExt && !thumbExt)
+      return { emoji: '✌️', name: 'Peace Sign', translation: '' };
+
+    if (thumbExt && indexExt && middleExt && ringExt && pinkyExt)
+      return { emoji: '👋', name: 'Wave', translation: '' };
+
+    if (!thumbExt && !indexExt && !middleExt && !ringExt && !pinkyExt)
+      return { emoji: '👊', name: 'Fist', translation: '' };
+
+    if (thumbExt && indexExt && pinkyExt && !middleExt && !ringExt)
+      return { emoji: '🤟', name: 'Love You', translation: '' };
+
+    if (middleExt && thumbExt && !indexExt  && !ringExt && !pinkyExt)
+      return { emoji: '🖕', name: 'Fuck You', translation: '' };
+
+          if (indexExt )
+      return { emoji: '☝️', name: 'I Will Kill You', translation: '' };
+
+         if (thumbExt && pinkyExt && !indexExt && !middleExt && !ringExt)
+      return { emoji: '🤙', name: 'Cool Guys', translation: '' };
+
+               if (pinkyExt && middleExt && ringExt)
+      return { emoji: '👌', name: 'Nice', translation: '' };
+
+
+    return null;
+  }
+
+  function onResults(results) {
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+    canvasCtx.translate(canvasElement.width, 0);
+    canvasCtx.scale(-1, 1);
+
+    if (results.image) {
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+    }
+
+    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+      detectedEmojiEl.textContent = '🤔';
+      detectedNameEl.textContent = 'Waiting for Gesture...';
+      translationTextEl.textContent = 'Please show a recognized sign language gesture.';
+      lastSpoken = '';
+      canvasCtx.restore();
+      return;
+    }
+
+    for (const landmarks of results.multiHandLandmarks) {
+      window.drawConnectors(canvasCtx, landmarks, window.HAND_CONNECTIONS, { color: '#60a5fa', lineWidth: 4 });
+      window.drawLandmarks(canvasCtx, landmarks, { color: '#3b82f6', lineWidth: 2 });
+
+      const gesture = classifyGesture(landmarks);
+
+      if (gesture) {
+        detectedEmojiEl.textContent = gesture.emoji;
+        detectedNameEl.textContent = gesture.name;
+        translationTextEl.textContent = gesture.translation;
+        speak(gesture.translation);
+      } else {
+        detectedEmojiEl.textContent = '❓';
+        detectedNameEl.textContent = 'Gesture not recognized';
+        translationTextEl.textContent = 'Try a different gesture.';
+        lastSpoken = '';
+      }
+    }
+
+    canvasCtx.restore();
+  }
+
+  function startCamera() {
+    entryButtons.style.display = 'none';
+    videoElement.hidden = false;
+    uploadedImageEl.hidden = true;
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        if (videoElement.readyState >= 2) {
+          canvasElement.width = videoElement.videoWidth;
+          canvasElement.height = videoElement.videoHeight;
+          await hands.send({ image: videoElement });
+        }
+      },
+      width: 480,
+      height: 480,
+    });
+    camera.start();
+  }
+
+  function openFile() {
+    fileInput.click();
+  }
+
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const img = new Image();
+    img.onload = async () => {
+      entryButtons.style.display = 'none';
+      uploadedImageEl.src = img.src;
+      uploadedImageEl.hidden = false;
+      videoElement.hidden = true;
+
+      canvasElement.width = img.width;
+      canvasElement.height = img.height;
+      canvasCtx.clearRect(0, 0, img.width, img.height);
+      canvasCtx.drawImage(img, 0, 0);
+
+      await hands.send({ image: img });
+    };
+    img.src = URL.createObjectURL(file);
+  });
+</script>
+
+</body>
+</html>
